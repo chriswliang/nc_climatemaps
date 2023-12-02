@@ -1,0 +1,234 @@
+---
+title: "Greenhouse Gas Emissions Per Capita by State and Sector"
+author: "Chris Liang"
+output: 
+  pdf_document:
+    latex_engine: xelatex
+    keep_tex: true
+    latex_args: ["-shell-escape"]
+geometry: "top=15mm, bottom=15mm, left=15mm, right=15mm"
+format: pdf
+editor: visual
+---
+
+```{r setup-chunk, include = FALSE}
+knitr::opts_chunk$set(message = FALSE, echo = FALSE) 
+```
+
+```{r}
+#| echo: false
+#| include: false
+#| label: downloading-packages
+#| message: false
+
+library(tidyverse)
+library(knitr)
+library(stringr)
+library(dplyr)
+library(sf)
+
+```
+
+
+```{r downloads, message = FALSE, include = FALSE}
+nc <- st_read("https://opendata.arcgis.com/datasets/9728285994804c8b9f20ce58bae45899_0.geojson", 
+              quiet = T)
+
+states <- read_csv("data/state_ghg.csv")
+pop_2021 <- read_csv("data/2021_Pop.csv")
+
+pop_2021 <- pop_2021 |>
+  mutate(across(where(is.character), ~ str_replace_all(., "\\.", "")),
+         STATE = toupper(STATE)) |>
+  rename(State_Name = STATE,
+         Year_2021 = "YEAR 2021")
+
+pop_2021$Year_2021 <- as.numeric(pop_2021$Year_2021)
+
+# Remove the last 7 rows
+pop_2021 <- pop_2021[1:(nrow(pop_2021) - 7), ]
+
+
+
+
+shape <- st_read("data/States_shapefile.geojson")
+```
+
+```{r}
+# ggplot(nc) + 
+#   geom_sf() + 
+#   labs(title = "North Carolina county boundaries") +
+#   theme_void() +
+#   theme(axis.ticks = element_blank(), axis.text = element_blank(), plot.title = element_text(hjust = 0.5))
+```
+
+
+```{r summarized, message = FALSE}
+summarized <- states |>
+  group_by(STATE, SECTOR) |>
+  summarise(sumemissions = sum(Y2021))
+
+summarized <- summarized |>
+  mutate(sumemissions = sumemissions*1000000)
+
+#now the units are metric tons
+
+#The units in this consolidated file are million metric tons of CO2 equivalents or CO2e.  Emissions from sources of GHGs are shown with positive numbers; removals from sinks are denoted by negative numbers.
+```
+
+
+```{r segments}
+agriculture <- summarized |>
+  filter(SECTOR == "Agriculture")
+
+energy <- summarized |>
+  filter(SECTOR == "Energy")
+
+industrial <- summarized |>
+  filter(SECTOR == "Industrial Processes and Product Use")
+
+land <- summarized |>
+  filter(SECTOR == "Land Use, Land-Use Change and Forestry")
+
+waste <- summarized |>
+  filter(SECTOR == "Waste")
+```
+
+### Context
+
+The EPA collects data each year on US states' greenhouse gas emissions by the 5 UNFCCC reporting sectors (energy, industrial processes, agriculture, land-use change and forestry, and waste). The EPA's methodology can be found [here](https://www.epa.gov/ghgemissions/methodology-report-inventory-us-greenhouse-gas-emissions-and-sinks-state-1990-2021). Most recently available data include emissions breakdowns by millions of metric tons of emissions per sector and subsector by state from 1990 to 2021, so I used the emissions in 2021 to reflect the most recently available year of data. I thought it might be interesting to visualize emissions by sector by state--scaled to be per capita by the 2021 population by state--to see if any states provided interesting findings on being super high in emissions per capita by one sector but super low by another sector. The shape file on state boundaries map came from an [ArcGIS Hub](https://hub.arcgis.com/datasets/1b02c87f62d24508970dc1a6df80c98e/explore?location=36.169077%2C-122.593435%2C3.40), and the data on the 2021 state populations came from the [US Census](https://www.census.gov/data/tables/time-series/demo/popest/2020s-state-total.html). The quarto file of my code is linked in this GitHub [repository](https://github.com/chriswliang/stateemissionsmaps).
+
+
+### Agricultural Emissions 
+
+```{r}
+shape_ag <- shape |>
+  left_join(agriculture, by = c("State_Code" = "STATE"))
+
+shape_ag <- shape_ag |>
+  left_join(pop_2021, by = "State_Name")
+
+shape_ag <- shape_ag |>
+  mutate(emissions_percapita = ifelse(sumemissions != 0, sumemissions/Year_2021, 0))
+```
+
+```{r fig.width = 6, fig.asp = 0.68}
+ggplot(shape_ag) +
+  geom_sf(aes(fill = emissions_percapita), color = "white") +
+  labs(title = "2021 Agricultural Greenhouse Gas Emissions Per Capita",
+       subtitle = "In Tons") +
+  scale_fill_gradient(high = "#132B43", low = "#56B1F7", name = "Emissions Per Capita (2021)") +
+  theme_void() +
+  theme(axis.ticks = element_blank(), axis.text = element_blank(), 
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "bottom",
+        legend.key.size = unit(0.5, "cm"))
+```
+
+### Energy Emissions
+
+```{r}
+shape_energy <- shape |>
+  left_join(energy, by = c("State_Code" = "STATE"))
+
+shape_energy <- shape_energy |>
+  left_join(pop_2021, by = "State_Name")
+
+shape_energy <- shape_energy |>
+  mutate(emissions_percapita = ifelse(sumemissions != 0, sumemissions/Year_2021, 0))
+```
+
+```{r fig.width = 6, fig.asp = 0.68}
+ggplot(shape_energy) +
+  geom_sf(aes(fill = emissions_percapita), color = "white") +
+  labs(title = "2021 Energy Greenhouse Gas Emissions Per Capita",
+       subtitle = "In Tons") +
+  scale_fill_gradient(high = "#132B43", low = "#56B1F7", name = "Emissions Per Capita (2021)") +
+  theme_void() +
+  theme(axis.ticks = element_blank(), axis.text = element_blank(), 
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "bottom",
+        legend.key.size = unit(0.5, "cm"))
+```
+
+### Land Use
+```{r}
+shape_land <- shape |>
+  left_join(land, by = c("State_Code" = "STATE"))
+
+shape_land <- shape_land |>
+  left_join(pop_2021, by = "State_Name")
+
+shape_land <- shape_land |>
+  mutate(emissions_percapita = ifelse(sumemissions != 0, sumemissions/Year_2021, 0))
+```
+
+```{r fig.width = 6, fig.asp = 0.68}
+ggplot(shape_land) +
+  geom_sf(aes(fill = emissions_percapita), color = "white") +
+  labs(title = "2021 Land Use Greenhouse Gas Emissions Per Capita",
+       subtitle = "In Tons") +
+  scale_fill_gradient(high = "#132B43", low = "#56B1F7", name = "Emissions Per Capita (2021)") +
+  theme_void() +
+  theme(axis.ticks = element_blank(), axis.text = element_blank(), 
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "bottom",
+        legend.key.size = unit(0.5, "cm"))
+```
+
+### Industrial 
+
+```{r}
+shape_industrial <- shape |>
+  left_join(industrial, by = c("State_Code" = "STATE"))
+
+shape_industrial <- shape_industrial |>
+  left_join(pop_2021, by = "State_Name")
+
+shape_industrial <- shape_industrial |>
+  mutate(emissions_percapita = ifelse(sumemissions != 0, sumemissions/Year_2021, 0))
+```
+
+```{r fig.width = 6, fig.asp = 0.68}
+ggplot(shape_industrial) +
+  geom_sf(aes(fill = emissions_percapita), color = "white") +
+  labs(title = "2021 Industrial Processes Greenhouse Gas Emissions Per Capita",
+       subtitle = "In Tons") +
+  scale_fill_gradient(high = "#132B43", low = "#56B1F7", name = "Emissions Per Capita (2021)") +
+  theme_void() +
+  theme(axis.ticks = element_blank(), axis.text = element_blank(), 
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "bottom",
+        legend.key.size = unit(0.5, "cm"))
+```
+
+### Waste
+
+```{r}
+shape_waste <- shape |>
+  left_join(waste, by = c("State_Code" = "STATE"))
+
+shape_waste <- shape_waste |>
+  left_join(pop_2021, by = "State_Name")
+
+shape_waste <- shape_waste |>
+  mutate(emissions_percapita = ifelse(sumemissions != 0, sumemissions/Year_2021, 0))
+```
+
+```{r fig.width = 6, fig.asp = 0.68}
+ggplot(shape_waste) +
+  geom_sf(aes(fill = emissions_percapita), color = "white") +
+  labs(title = "2021 Land Use Greenhouse Gas Emissions Per Capita",
+       subtitle = "In Tons") +
+  scale_fill_gradient(high = "#132B43", low = "#56B1F7", name = "Emissions Per Capita (2021)") +
+  theme_void() +
+  theme(axis.ticks = element_blank(), axis.text = element_blank(), 
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "bottom",
+        legend.key.size = unit(0.5, "cm"))
+```
